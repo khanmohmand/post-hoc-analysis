@@ -341,8 +341,8 @@ def nfd_excel(rep, lines):
 
     r = last + 2
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
-    note = ws.cell(r, 1, f"Rang wale khane = option {NFD_LIMIT:g}% se kam students ne chuna (Non Functional).  "
-                         "Bold = key wala option.")
+    note = ws.cell(r, 1, f"Shaded cells = options chosen by less than {NFD_LIMIT:g}% of students (Non Functional).  "
+                         "Bold = key (correct) option.")
     note.font = Font(italic=True, size=10)
     note.alignment = Alignment(wrap_text=True, vertical="top")
     ws.row_dimensions[r].height = 30
