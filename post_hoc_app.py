@@ -191,8 +191,8 @@ def report(resp, key):
     }
 
 
-def _list_df(questions):
-    return pd.DataFrame({"Questions": questions, "Remarks": [""] * len(questions)})
+def _list_df(questions, label="Questions"):
+    return pd.DataFrame({label: questions, "Remarks": [""] * len(questions)})
 
 
 def _shown(table):
@@ -219,9 +219,14 @@ def calculations_excel(marks, summary):
     return buf.getvalue()
 
 
+HEADING_ROW_HEIGHT = 33.5   # heading ki har row ki height
+HEADER_ROW_HEIGHT = 32      # table ke column names (Questions, Difficulty Index ...) ki row ki height
+ROW_HEIGHT = 32             # All 3 / All 4 Column sheets ki rows ki height
+
+
 def _heading_size(i):
-    """Default 2 lines (Ziauddin University / Examination Department) = 24, user ki lines = 16."""
-    return 24 if i <= len(DEFAULT_HEADING) else 16
+    """Line 1 (Ziauddin University) = 24, line 2 (Examination Department) = 18, user ki lines = 16."""
+    return {1: 24, 2: 18}.get(i, 16)
 
 
 def _heading(ws, lines, ncols):
@@ -242,7 +247,8 @@ def _fit_heading(ws, lines, ncols):
         size = _heading_size(i)
         per_line = max(1, int(width / (size / 11 * 1.15)))   # ek line mein kitne akshar aate hain
         n_lines = -(-len(text) // per_line)
-        ws.row_dimensions[i].height = n_lines * size * 1.4
+        # height 33.5 hai; sirf bohat lambi line (jo ek line mein na aaye) ho to row utni lambi ho jati hai
+        ws.row_dimensions[i].height = HEADING_ROW_HEIGHT if n_lines == 1 else n_lines * size * 1.4
 
 
 def _clean(v):
@@ -256,6 +262,7 @@ def _clean(v):
 def _table(ws, df, top, formats=None):
     """DataFrame ko sheet mein likho (header, borders, widths). Aakhri row ka number wapis karta hai."""
     formats = formats or {}
+    ws.row_dimensions[top].height = HEADER_ROW_HEIGHT
     for j, name in enumerate(df.columns, start=1):
         c = ws.cell(top, j, name)
         c.font = Font(bold=True)
@@ -266,7 +273,7 @@ def _table(ws, df, top, formats=None):
         for j, v in enumerate(rec, start=1):
             c = ws.cell(i, j, _clean(v))
             c.border = BORDER
-            c.alignment = Alignment(horizontal="center")
+            c.alignment = Alignment(horizontal="center", vertical="center")
             if df.columns[j - 1] in formats:
                 c.number_format = formats[df.columns[j - 1]]
     for j, name in enumerate(df.columns, start=1):
@@ -302,13 +309,15 @@ def columns_excel(rep, lines):
     """All 3 Column aur All 4 Column lists, alag Excel file mein (har list ki apni sheet)."""
     wb = Workbook()
     first = True
-    for title, qs in (("All 3 Column Questions", rep["three"]), ("All 4 Column Questions", rep["four"])):
+    for n, qs in ((3, rep["three"]), (4, rep["four"])):
         ws = wb.active if first else wb.create_sheet()
         first = False
-        ws.title = title
+        ws.title = f"All {n} Column Questions"
         top = _heading(ws, lines, 2)
-        _table(ws, _list_df(qs), top)
-        ws.column_dimensions["A"].width = 20
+        last = _table(ws, _list_df(qs, f"{n} Column Questions"), top)
+        for r in range(top, last + 1):          # header row aur neeche ki sab rows: height 32
+            ws.row_dimensions[r].height = ROW_HEIGHT
+        ws.column_dimensions["A"].width = 22
         ws.column_dimensions["B"].width = 44
         _fit_heading(ws, lines, 2)
     buf = BytesIO()
@@ -354,6 +363,13 @@ def nfd_excel(rep, lines):
 
 
 # ------------------------------------------------------------------- UI
+def file_name(prefix, subject):
+    """Report_Periodontology.xlsx jaisa naam; subject khali ho to sirf Report.xlsx"""
+    subject = "".join(ch for ch in subject.strip() if ch not in '\\/:*?"<>|')
+    subject = "_".join(subject.split())
+    return f"{prefix}_{subject}.xlsx" if subject else f"{prefix}.xlsx"
+
+
 def download_button(label, data, file_name):
     """Download button jo click par app ko dobara run nahi karta (isse 'File wasn't available' error aata tha)."""
     try:
@@ -385,11 +401,13 @@ def main():
     # --- Excel files ki heading: 2 default lines + user ki 3 lines tak
     st.subheader("Excel files ki heading")
     st.caption("Har Excel file ke upar 'Ziauddin University' aur 'Examination Department' khud aayega. "
-               "Uske neeche ki lines yahan likhein (zyada se zyada 3). Likh kar Enter dabayein.")
-    h1 = st.text_input("Line 1", placeholder="Bachelors of Dental Surgery", max_chars=80)
-    h2 = st.text_input("Line 2", placeholder="Batch-15 3rd Prof", max_chars=80)
-    h3 = st.text_input("Line 3", placeholder="Oral Medicine", max_chars=80)
+               "Uske neeche ki lines yahan likhein (zyada se zyada 3). Likh kar Enter dabayein. "
+               "Subject Name Excel files ke naam mein bhi aayega.")
+    h1 = st.text_input("Program Name", placeholder="Bachelors of Dental Surgery", max_chars=80)
+    h2 = st.text_input("Batch & Year", placeholder="Batch-15 3rd Prof", max_chars=80)
+    h3 = st.text_input("Subject Name", placeholder="Oral Medicine", max_chars=80)
     lines = DEFAULT_HEADING + [x.strip() for x in (h1, h2, h3) if x.strip()]
+    subject = h3
 
     st.divider()
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -414,7 +432,7 @@ def main():
         st.subheader("Total Sum of Answers, Diff. Index, Disc. Index")
         st.dataframe(summary, use_container_width=True)
         download_button("Calculations Excel mein download karein",
-                        calculations_excel(marks, summary), "Calculations.xlsx")
+                        calculations_excel(marks, summary), file_name("Calculation", subject))
 
     elif view == "report":
         rep = report(resp, key)
@@ -427,7 +445,8 @@ def main():
             "Columns: Difficulty (30 se kam / 70 se zyada), Disc. Index (0.2 se kam), "
             "Alpha if Item Deleted (Cronbach's Alpha se zyada), Non Functional Distractor (1 se zyada)."
         )
-        download_button("Report Excel mein download karein", report_excel(rep, lines), "Report.xlsx")
+        download_button("Report Excel mein download karein", report_excel(rep, lines),
+                        file_name("Report", subject))
 
     elif view in ("three", "four"):
         rep = report(resp, key)
@@ -436,7 +455,7 @@ def main():
         st.dataframe(_list_df(qs), use_container_width=True, hide_index=True)
         st.caption("Download wali Excel file mein 3 Column aur 4 Column dono lists (alag alag sheet mein) aati hain.")
         download_button("3 aur 4 Column lists Excel mein download karein",
-                        columns_excel(rep, lines), "All_3_and_4_Column_Questions.xlsx")
+                        columns_excel(rep, lines), file_name("All_3_and_4_Column_Question", subject))
 
     elif view == "nfd":
         rep = report(resp, key)
@@ -444,7 +463,7 @@ def main():
         st.caption(f"Har option kitne percent students ne chuna. {NFD_LIMIT:g}% se kam wale option Non Functional ginte hain "
                    "(key wala option bhi).")
         st.dataframe(_nfd_shown(rep), use_container_width=True, height=600)
-        download_button("NFD Excel mein download karein", nfd_excel(rep, lines), "NFD.xlsx")
+        download_button("NFD Excel mein download karein", nfd_excel(rep, lines), file_name("NFD", subject))
 
 
 if __name__ == "__main__":
