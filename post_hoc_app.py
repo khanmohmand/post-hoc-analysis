@@ -219,15 +219,30 @@ def calculations_excel(marks, summary):
     return buf.getvalue()
 
 
+def _heading_size(i):
+    """Default 2 lines (Ziauddin University / Examination Department) = 24, user ki lines = 16."""
+    return 24 if i <= len(DEFAULT_HEADING) else 16
+
+
 def _heading(ws, lines, ncols):
     """Heading ki lines: har line poori table ki width par Merge & Center. Table ki pehli row wapis karta hai."""
     for i, text in enumerate(lines, start=1):
         if ncols > 1:
             ws.merge_cells(start_row=i, start_column=1, end_row=i, end_column=ncols)
         c = ws.cell(i, 1, text)
-        c.font = Font(bold=True, size=14 if i == 1 else 12)
-        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.font = Font(bold=True, size=_heading_size(i))
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     return len(lines) + 2  # heading ke baad ek khali row
+
+
+def _fit_heading(ws, lines, ncols):
+    """Columns ki width dekh kar heading ki rows ki height set karo (taake bade font ka text kate nahi)."""
+    width = sum(ws.column_dimensions[get_column_letter(j)].width or 8.43 for j in range(1, ncols + 1))
+    for i, text in enumerate(lines, start=1):
+        size = _heading_size(i)
+        per_line = max(1, int(width / (size / 11 * 1.15)))   # ek line mein kitne akshar aate hain
+        n_lines = -(-len(text) // per_line)
+        ws.row_dimensions[i].height = n_lines * size * 1.4
 
 
 def _clean(v):
@@ -277,6 +292,7 @@ def report_excel(rep, lines):
     c = ws.cell(r, 1, f"Cronbach's Alpha: {a}  |  No. of Items: {rep['items']}")
     c.font = Font(bold=True)
     c.alignment = Alignment(horizontal="center", vertical="center")
+    _fit_heading(ws, lines, ncols)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -292,7 +308,9 @@ def columns_excel(rep, lines):
         ws.title = title
         top = _heading(ws, lines, 2)
         _table(ws, _list_df(qs), top)
-        ws.column_dimensions["B"].width = 34
+        ws.column_dimensions["A"].width = 20
+        ws.column_dimensions["B"].width = 44
+        _fit_heading(ws, lines, 2)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -329,6 +347,7 @@ def nfd_excel(rep, lines):
     note.alignment = Alignment(wrap_text=True, vertical="top")
     ws.row_dimensions[r].height = 30
 
+    _fit_heading(ws, lines, ncols)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
