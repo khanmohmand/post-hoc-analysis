@@ -17,6 +17,7 @@ import streamlit as st
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.page import PageMargins
 
 NFD_LIMIT = 5.0  # koi option is percent se kam students ne chuna to woh Non-Functional hai
 DEFAULT_HEADING = ["Ziauddin University", "Examination Department"]
@@ -221,7 +222,11 @@ def calculations_excel(marks, summary):
 
 HEADING_ROW_HEIGHT = 33.5   # heading ki har row ki height
 HEADER_ROW_HEIGHT = 32      # table ke column names (Questions, Difficulty Index ...) ki row ki height
-ROW_HEIGHT = 32             # All 3 / All 4 Column sheets ki rows ki height
+ROW_HEIGHT = 37.5           # All 3 / All 4 Column sheets ki rows ki height (header row bhi)
+LIST_COL_WIDTH = 18.29      # All 3 / All 4 Column sheets: dono columns ki width
+NFD_COL_WIDTH = 13.57       # NFD sheet: sab columns ki width
+NFD_HEADER_HEIGHT = 67.5    # NFD sheet: column names wali row ki height
+REPORT_COL_WIDTHS = [11, 12, 11, 22, 16, 28, 10]   # Report: A4 portrait ki width mein poora aane ke liye
 
 
 def _heading_size(i):
@@ -249,6 +254,14 @@ def _fit_heading(ws, lines, ncols):
         n_lines = -(-len(text) // per_line)
         # height 33.5 hai; sirf bohat lambi line (jo ek line mein na aaye) ho to row utni lambi ho jati hai
         ws.row_dimensions[i].height = HEADING_ROW_HEIGHT if n_lines == 1 else n_lines * size * 1.4
+
+
+def _page_setup(ws):
+    """Print setting: A4, Portrait, Scaling 85%, Margins: Top 0, Bottom 0, Left 0.5, Right 0.5 (inch)."""
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = "portrait"
+    ws.page_setup.scale = 85
+    ws.page_margins = PageMargins(left=0.5, right=0.5, top=0, bottom=0, header=0, footer=0)
 
 
 def _clean(v):
@@ -292,6 +305,8 @@ def report_excel(rep, lines):
         ws, rep["table"], top,
         {"Difficulty Index": "0.0", "Disc. Index": "0.00", "Cronbach's Alpha if Item Deleted": "0.0000"},
     )
+    for j, w in enumerate(REPORT_COL_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(j)].width = w
     # Table ke neeche: Cronbach's Alpha aur items ki ginti
     a = "-" if np.isnan(rep["alpha"]) else f"{rep['alpha']:.3f}"
     r = last + 2
@@ -300,6 +315,7 @@ def report_excel(rep, lines):
     c.font = Font(bold=True)
     c.alignment = Alignment(horizontal="center", vertical="center")
     _fit_heading(ws, lines, ncols)
+    _page_setup(ws)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -317,9 +333,10 @@ def columns_excel(rep, lines):
         last = _table(ws, _list_df(qs, f"{n} Column Questions"), top)
         for r in range(top, last + 1):          # header row aur neeche ki sab rows: height 32
             ws.row_dimensions[r].height = ROW_HEIGHT
-        ws.column_dimensions["A"].width = 22
-        ws.column_dimensions["B"].width = 44
+        ws.column_dimensions["A"].width = LIST_COL_WIDTH
+        ws.column_dimensions["B"].width = LIST_COL_WIDTH
         _fit_heading(ws, lines, 2)
+        _page_setup(ws)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -339,6 +356,9 @@ def nfd_excel(rep, lines):
     ws.title = "NFD"
     top = _heading(ws, lines, ncols)
     last = _table(ws, df, top, {o: "0.0%" for o in options})
+    for j in range(1, ncols + 1):
+        ws.column_dimensions[get_column_letter(j)].width = NFD_COL_WIDTH
+    ws.row_dimensions[top].height = NFD_HEADER_HEIGHT
 
     for i, q in enumerate(qcols):
         for j, o in enumerate(options, start=2):
@@ -357,6 +377,7 @@ def nfd_excel(rep, lines):
     ws.row_dimensions[r].height = 30
 
     _fit_heading(ws, lines, ncols)
+    _page_setup(ws)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
