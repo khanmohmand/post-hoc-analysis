@@ -27,6 +27,7 @@ THIN = Side(style="thin", color="999999")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 HEAD_FILL = PatternFill("solid", fgColor="D9E1F2")
 LOW_FILL = PatternFill("solid", fgColor="F8CBAD")
+FLAG_FILL = PatternFill("solid", fgColor="808080")   # Report: shart poori hone wale khane dark grey
 
 
 # ---------------------------------------------------------------- loading
@@ -162,6 +163,7 @@ def report(resp, key):
 
     # --- Flags (4 columns): Diff, Disc, Alpha-if-deleted, NFD
     rows = []
+    flag_map = {}
     for q in qcols:
         d, s = summary.loc["Diff. Index", q], summary.loc["Disc. Index", q]
         flags = {
@@ -170,6 +172,7 @@ def report(resp, key):
             "Alpha": bool(alpha_del[q] > alpha_ref),
             "NFD": nfd[q] > 1,
         }
+        flag_map[q] = flags
         rows.append(
             {
                 "Questions": q,
@@ -188,7 +191,7 @@ def report(resp, key):
     return {
         "table": table, "alpha": alpha, "items": len(qcols), "students": n,
         "rel_students": rel_students, "three": three, "four": four,
-        "pct": pct, "nfd": nfd, "options": options, "key": key,
+        "pct": pct, "nfd": nfd, "options": options, "key": key, "flags": flag_map,
     }
 
 
@@ -307,6 +310,12 @@ def report_excel(rep, lines):
     )
     for j, w in enumerate(REPORT_COL_WIDTHS, start=1):
         ws.column_dimensions[get_column_letter(j)].width = w
+    # Jis cell mein shart poori ho (Difficulty >70 ya <30, Disc. <0.2, Alpha upar, NFD >1) use dark grey karo
+    flag_cols = {2: "Difficulty", 3: "Disc.", 4: "Alpha", 5: "NFD"}
+    for i, q in enumerate(rep["table"]["Questions"], start=top + 1):
+        for col, name in flag_cols.items():
+            if rep["flags"][q][name]:
+                ws.cell(i, col).fill = FLAG_FILL
     # Table ke neeche: Cronbach's Alpha aur items ki ginti
     a = "-" if np.isnan(rep["alpha"]) else f"{rep['alpha']:.3f}"
     r = last + 2
