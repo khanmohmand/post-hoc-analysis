@@ -298,7 +298,53 @@ def _table(ws, df, top, formats=None):
     return top + len(df)
 
 
-def report_excel(rep, lines):
+def clean_breakup(rows, total_q):
+    """rows = [(naam, from, to), ...]. Sahi rows aur ghaltiyon ki list wapis karta hai."""
+    good, problems = [], []
+    for k, (name, a, b) in enumerate(rows, start=1):
+        name = (name or "").strip()
+        if not name and not a and not b:
+            continue                                   # khali row
+        if not name or not a or not b:
+            problems.append(f"Subject {k}: naam, From aur To teeno likhein.")
+        elif a > b:
+            problems.append(f"{name}: 'From' ({a}) 'To' ({b}) se bara nahi ho sakta.")
+        elif b > total_q:
+            problems.append(f"{name}: 'To' ({b}) total questions ({total_q}) se zyada hai.")
+        else:
+            good.append((name, int(a), int(b)))
+    good.sort(key=lambda r: r[1])
+    for (n1, a1, b1), (n2, a2, b2) in zip(good, good[1:]):
+        if a2 <= b1:
+            problems.append(f"{n1} ({a1}-{b1}) aur {n2} ({a2}-{b2}) ke questions aapas mein mil rahe hain.")
+    return good, problems
+
+
+def _breakup_grid(ws, breakup, top):
+    """Report ke aakhir mein Break Up grid: D aur E columns mein (page ke beech ke qareeb)."""
+    c1, c2 = 4, 5
+    mid = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    ws.merge_cells(start_row=top, start_column=c1, end_row=top, end_column=c2)
+    t = ws.cell(top, c1, "Break Up")
+    t.font, t.alignment = Font(bold=True, size=16), mid
+    ws.cell(top, c1).border = ws.cell(top, c2).border = BORDER
+    ws.row_dimensions[top].height = 24
+
+    for col, label in ((c1, "Subjects"), (c2, "Questions")):
+        c = ws.cell(top + 1, col, label)
+        c.font, c.alignment, c.border = Font(bold=True, size=14), mid, BORDER
+    ws.row_dimensions[top + 1].height = 21
+
+    for i, (name, a, b) in enumerate(breakup, start=top + 2):
+        for col, text in ((c1, name), (c2, f"{a}-{b}")):
+            c = ws.cell(i, col, text)
+            c.font, c.alignment, c.border = Font(size=12), mid, BORDER
+            c.number_format = "@"
+        ws.row_dimensions[i].height = 18 if len(name) <= 20 else 34   # lamba naam do line mein aaye
+
+
+def report_excel(rep, lines, breakup=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Report"
@@ -323,6 +369,8 @@ def report_excel(rep, lines):
     c = ws.cell(r, 1, f"Cronbach's Alpha: {a}  |  No. of Items: {rep['items']}")
     c.font = Font(bold=True)
     c.alignment = Alignment(horizontal="center", vertical="center")
+    if breakup:
+        _breakup_grid(ws, breakup, r + 2)
     _fit_heading(ws, lines, ncols)
     _page_setup(ws)
     buf = BytesIO()
@@ -439,6 +487,31 @@ def main():
     lines = DEFAULT_HEADING + [x.strip() for x in (h1, h2, h3) if x.strip()]
     subject = h3
 
+    # --- Break Up (optional): ek exam mein kai subjects hon to
+    st.subheader("Break Up (optional)")
+    st.caption("Agar ek exam mein kai subjects hon to subject ka naam aur uske questions ki hadd likhein "
+               "(6 subjects tak). Ye grid sirf Report Excel ke aakhir mein aati hai. Khali chhorein to nahi aayegi.")
+    total_q = len(key)
+    head = st.columns([3, 1, 1])
+    head[0].caption("Subject ka naam")
+    head[1].caption("Question se")
+    head[2].caption("Question tak")
+    rows = []
+    for k in range(1, 7):
+        c1, c2, c3 = st.columns([3, 1, 1])
+        name = c1.text_input(f"Subject {k}", key=f"bu_name_{k}", max_chars=40, label_visibility="collapsed")
+        a = c2.number_input(f"From {k}", min_value=0, max_value=total_q, value=0, step=1,
+                            key=f"bu_from_{k}", label_visibility="collapsed")
+        b = c3.number_input(f"To {k}", min_value=0, max_value=total_q, value=0, step=1,
+                            key=f"bu_to_{k}", label_visibility="collapsed")
+        rows.append((name, a, b))
+    breakup, problems = clean_breakup(rows, total_q)
+    if problems:
+        for msg in problems:
+            st.error(msg)
+        st.warning("Jab tak ye ghaltiyan theek nahi hotin, Break Up Report mein nahi aayegi.")
+        breakup = []
+
     st.divider()
     c1, c2, c3, c4, c5 = st.columns(5)
     if c1.button("Calculations", use_container_width=True):
@@ -475,7 +548,7 @@ def main():
             "Columns: Difficulty (30 se kam / 70 se zyada), Disc. Index (0.2 se kam), "
             "Alpha if Item Deleted (Cronbach's Alpha se zyada), Non Functional Distractor (1 se zyada)."
         )
-        download_button("Report Excel mein download karein", report_excel(rep, lines),
+        download_button("Report Excel mein download karein", report_excel(rep, lines, breakup),
                         file_name("Report", subject))
 
     elif view in ("three", "four"):
